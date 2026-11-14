@@ -1,0 +1,6 @@
+# Analysis and formatting for every package of the workspace: the recommended lints of package:lints, and a page
+# width of 120. A package with its own analysis_options.yaml includes this file.
+include: package:lints/recommended.yaml
+
+formatter:
+  page_width: 120
