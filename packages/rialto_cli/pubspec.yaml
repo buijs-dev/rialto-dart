@@ -1,0 +1,14 @@
+name: rialto_cli
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.11.0
+resolution: workspace
+description: The rialto command line for Dart.
+executables:
+  rialto: rialto
+dependencies:
+  path: ^1.9.1
+  rialto_contract: ^0.1.0
+dev_dependencies:
+  test: ^1.25.0
