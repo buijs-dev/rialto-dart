@@ -1,0 +1,93 @@
+name: CI
+
+# Analysis and tests per package, the compiled command line, and conformance against the test contracts of
+# rialto-spec. rialto-spec is checked out next to this repository (the tests read it as ../rialto-spec), at the branch
+# with the name of this one when it exists (the same slice), otherwise at develop.
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [ rialto_contract, rialto_cli ]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rialto-dart
+      - id: spec
+        name: Choose the rialto-spec branch
+        run: |
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          if git ls-remote --exit-code --heads https://github.com/buijs-dev/rialto-spec.git "$branch" >/dev/null; then
+            echo "ref=$branch" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=develop" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: buijs-dev/rialto-spec
+          ref: ${{ steps.spec.outputs.ref }}
+          path: rialto-spec
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+        working-directory: rialto-dart
+      - run: dart format --set-exit-if-changed --output none packages/${{ matrix.package }}
+        working-directory: rialto-dart
+      - run: dart analyze --fatal-infos
+        working-directory: rialto-dart/packages/${{ matrix.package }}
+      - run: dart test
+        working-directory: rialto-dart/packages/${{ matrix.package }}
+      # Line and branch coverage, printed to the log and the job summary; no threshold.
+      - name: Coverage
+        working-directory: rialto-dart/packages/${{ matrix.package }}
+        run: |
+          dart run coverage:test_with_coverage --branch-coverage --out coverage >/dev/null
+          awk -F'[:,]' '
+            /^LF:/ { lines += $2 } /^LH:/ { hit += $2 }
+            /^BRDA:/ { branches++; if ($5 != "-" && $5 != "0") taken++ }
+            END { printf "${{ matrix.package }}: lines %d/%d (%.1f%%), branches %d/%d (%.1f%%)\n",
+                  hit, lines, 100 * hit / lines, taken, branches, branches ? 100 * taken / branches : 0 }
+          ' coverage/lcov.info | tee -a "$GITHUB_STEP_SUMMARY"
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rialto-dart
+      - id: spec
+        name: Choose the rialto-spec branch
+        run: |
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          if git ls-remote --exit-code --heads https://github.com/buijs-dev/rialto-spec.git "$branch" >/dev/null; then
+            echo "ref=$branch" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=develop" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: buijs-dev/rialto-spec
+          ref: ${{ steps.spec.outputs.ref }}
+          path: rialto-spec
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: dart pub get
+        working-directory: rialto-dart
+      - name: Build the command line
+        run: echo "RIALTO=$(rialto-dart/tool/build_cli.sh)" >> "$GITHUB_ENV"
+      - name: Conformance
+        working-directory: rialto-spec
+        run: python3 tools/conformance.py --jobs 8 -- "$RIALTO" validate {contract}
