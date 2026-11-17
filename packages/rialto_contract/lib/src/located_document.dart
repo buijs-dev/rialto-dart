@@ -105,6 +105,17 @@ class LocatedDocument {
   }
 }
 
+/// The text of [error] for a diagnostic message: what went wrong, without the name of the exception type. A YAML
+/// error keeps its line and column.
+String errorText(Object error) => switch (error) {
+  YamlException() => '$error',
+  FormatException(:final message) => message,
+  FileSystemException(:final message, :final path, :final osError) =>
+    '${osError?.message ?? message}${path == null || path.isEmpty ? '' : ': $path'}',
+  HttpException(:final message) => message,
+  _ => '$error',
+};
+
 /// Helpers to read plain JSON values.
 Map<String, Object?> asMap(Object? value) => value is Map ? value.cast<String, Object?>() : const {};
 

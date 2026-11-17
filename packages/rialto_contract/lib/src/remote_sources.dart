@@ -99,7 +99,7 @@ class RemoteSources {
           if (remote == RemoteMode.update || pinned == null || hash == pinned) _store(hash, fileName(url), body);
           fetched.hashes[url] = hash;
         } catch (e) {
-          fetched.failures[url] = '$e';
+          fetched.failures[url] = errorText(e);
         }
       }
     }
@@ -112,7 +112,7 @@ class RemoteSources {
     try {
       document = LocatedDocument.readMapping(contractFile);
     } catch (e) {
-      diagnostics.error(Code.unreadable, '$e', Location(contractFile));
+      diagnostics.error(Code.unreadable, errorText(e), Location(contractFile));
       return const [];
     }
     final fetched = await prefetch([contractFile], remote: RemoteMode.update);

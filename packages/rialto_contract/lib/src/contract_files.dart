@@ -42,7 +42,7 @@ class ContractFiles {
     try {
       document = LocatedDocument.readMapping(root);
     } catch (e) {
-      diagnostics.error(Code.unreadable, '$e', Location(root));
+      diagnostics.error(Code.unreadable, errorText(e), Location(root));
       return null;
     }
 
@@ -183,7 +183,7 @@ class _Bundle {
     try {
       fragment = LocatedDocument.readMapping(file);
     } catch (e) {
-      diagnostics.error(Code.unreadable, '$e', Location(file));
+      diagnostics.error(Code.unreadable, errorText(e), Location(file));
       return;
     }
 

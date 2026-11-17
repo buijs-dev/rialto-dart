@@ -122,7 +122,11 @@ class Sources {
             ? SqlSource(name, file, SqlSchema.read(File(file).readAsStringSync()))
             : DocumentSource(name, file, LocatedDocument.read(file));
       } catch (e) {
-        diagnostics.error(Code.sourceUnreadable, "Source '$name' cannot be read: $e", contractDocument.locate(pointer));
+        diagnostics.error(
+          Code.sourceUnreadable,
+          "Source '$name' cannot be read: ${errorText(e)}",
+          contractDocument.locate(pointer),
+        );
       }
     });
     session.finish();

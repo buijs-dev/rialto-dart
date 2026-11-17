@@ -104,6 +104,21 @@ void main() {
       expect(missing.diagnostics.single.code, Code.unreadable);
     });
 
+    test('the message says what is wrong, without the name of an exception type', () {
+      final list = ContractValidator.validate(write('list.yaml', '- rialto\n')).diagnostics.single;
+      expect(list.message, 'The document is not a mapping but a list');
+      final missingPath = p.join(work.path, 'missing.yaml');
+      final missing = ContractValidator.validate(missingPath).diagnostics.single;
+      expect(missing.message, endsWith(': $missingPath'));
+      expect(missing.message, isNot(contains('Exception')));
+      final broken = ContractValidator.validate(write('broken.yaml', 'a: [\n')).diagnostics.single;
+      expect(broken.message, startsWith('Error on line'));
+      expect(errorText(const FormatException('plain')), 'plain');
+      expect(errorText(const FileSystemException('Cannot open file')), 'Cannot open file');
+      expect(errorText(const HttpException('HTTP 404')), 'HTTP 404');
+      expect(errorText(StateError('offline')), 'Bad state: offline');
+    });
+
     test('an empty file is an empty mapping, which lacks rialto (RIALTO-K003)', () {
       expect(diagnostics('empty.yaml', '').map((it) => it.code), [Code.unsupportedVersion]);
     });

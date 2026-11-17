@@ -162,6 +162,7 @@ void main() {
         ('RIALTO-K001', 'parts/a.yaml'),
         ('RIALTO-K001', 'parts/b.yaml'),
       ]);
+      expect(validate().last.message, 'The document is not a mapping but a list');
     });
 
     test('a finding of a later check names the fragment it is in (K5.5)', () {
