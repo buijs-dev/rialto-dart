@@ -359,11 +359,13 @@ const contractSchema = r'''{
         },
         "minLength": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 2147483647
         },
         "maxLength": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 2147483647
         },
         "minimum": {
           "type": "number"
@@ -410,11 +412,13 @@ const contractSchema = r'''{
         },
         "minItems": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 2147483647
         },
         "maxItems": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 2147483647
         },
         "uniqueItems": {
           "description": "For a list<T>: no two equal elements (D3.8).",
@@ -427,7 +431,8 @@ const contractSchema = r'''{
         "maxSize": {
           "description": "For a binary: the largest size in bytes (K2.11).",
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 2147483647
         },
         "mediaTypes": {
           "description": "For a binary: the media types it may have, such as application/pdf or image/*.",
@@ -825,11 +830,13 @@ const contractSchema = r'''{
               },
               "minLength": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 2147483647
               },
               "maxLength": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 2147483647
               },
               "minimum": {
                 "type": "number"
@@ -849,11 +856,13 @@ const contractSchema = r'''{
               },
               "minItems": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 2147483647
               },
               "maxItems": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 2147483647
               },
               "uniqueItems": {
                 "description": "For a list<T>: no two equal elements (D3.8).",
@@ -1164,7 +1173,8 @@ const contractSchema = r'''{
             },
             "maxItems": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 2147483647
             },
             "wire": {
               "type": "object",
@@ -1304,7 +1314,8 @@ const contractSchema = r'''{
         "maxItems": {
           "description": "For output: list<T>, the most elements the response holds (R2.7).",
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 2147483647
         }
       },
       "patternProperties": {
@@ -1939,7 +1950,8 @@ const contractSchema = r'''{
           "properties": {
             "attempts": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 2147483647
             },
             "idempotent": {
               "type": "boolean"
@@ -2145,7 +2157,8 @@ const contractSchema = r'''{
             },
             "pageSize": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 2147483647
             },
             "where": {
               "description": "Filters the view always sends, with the signed-in actor as value (presentation U6.5).",
@@ -2495,11 +2508,13 @@ const contractSchema = r'''{
             },
             "maxLength": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 2147483647
             },
             "maxDepth": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 2147483647
             }
           },
           "additionalProperties": false
@@ -2612,11 +2627,13 @@ const contractSchema = r'''{
               "properties": {
                 "default": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "maximum": 2147483647
                 },
                 "max": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "maximum": 2147483647
                 }
               },
               "additionalProperties": false
@@ -3197,7 +3214,8 @@ const contractSchema = r'''{
           "properties": {
             "attempts": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 2147483647
             },
             "deadLetter": {
               "$ref": "#/$defs/externalRef"
