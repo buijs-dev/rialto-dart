@@ -86,6 +86,168 @@ void main() {
     }
   });
 
+  group('validate', () {
+    test('validates several contracts, reports the missing one on stderr and fails', () async {
+      final out = StringBuffer(), err = StringBuffer();
+      final missing = p.join(contracts, 'valid/missing.yaml');
+      final code = await runRialto(['validate', p.join(contracts, 'valid/minimal.yaml'), missing], out: out, err: err);
+      expect(code, 1);
+      expect(out.toString(), contains('minimal.yaml: valid'));
+      expect(err.toString(), 'error: $missing not found\n');
+    });
+
+    test('--format text is the default output', () async {
+      final file = p.join(contracts, 'invalid/unknown-type.yaml');
+      final text = StringBuffer(), plain = StringBuffer();
+      expect(await runRialto(['validate', '--format', 'text', file], out: StringBuffer(), err: text), 1);
+      expect(await runRialto(['validate', file], out: StringBuffer(), err: plain), 1);
+      expect(text.toString(), plain.toString());
+    });
+
+    test('--format json reports a valid contract and a missing file in one document', () async {
+      final out = StringBuffer(), err = StringBuffer();
+      final valid = p.join(contracts, 'valid/minimal.yaml');
+      final code = await runRialto(['validate', valid, '--format', 'json', 'missing.yaml'], out: out, err: err);
+      expect(code, 1);
+      expect(err.toString(), isEmpty);
+      final json = jsonDecode(out.toString()) as Map<String, Object?>;
+      expect(json['valid'], false);
+      expect(json['contracts'], [
+        {'file': valid, 'valid': true, 'diagnostics': <Object?>[]},
+        {
+          'file': 'missing.yaml',
+          'valid': false,
+          'diagnostics': [
+            {'severity': 'error', 'code': null, 'message': 'missing.yaml not found'},
+          ],
+        },
+      ]);
+
+      final only = StringBuffer();
+      expect(await runRialto(['validate', '--format', 'json', valid], out: only, err: StringBuffer()), 0);
+      expect((jsonDecode(only.toString()) as Map)['valid'], true);
+    });
+
+    test('--format json carries every field of a diagnostic', () async {
+      final out = StringBuffer();
+      final file = p.join(contracts, 'invalid/unsupported-version.yaml');
+      await runRialto(['validate', '--format', 'json', file], out: out, err: StringBuffer());
+      final contract = ((jsonDecode(out.toString()) as Map)['contracts'] as List).single as Map;
+      final diagnostic = (contract['diagnostics'] as List).single as Map;
+      expect(diagnostic.keys, [
+        'severity',
+        'code',
+        'requirement',
+        'file',
+        'line',
+        'column',
+        'pointer',
+        'message',
+        'hint',
+      ]);
+      expect(diagnostic['code'], 'RIALTO-K003');
+      expect(diagnostic['file'], file);
+      expect(diagnostic['pointer'], '/rialto');
+      expect(diagnostic['hint'], contains('1.0.0'));
+    });
+
+    test('rejects --format without a value or without contracts, and prints the usage', () async {
+      final valid = p.join(contracts, 'valid/minimal.yaml');
+      for (final args in [
+        ['validate', valid, '--format'],
+        ['validate', '--format', 'json'],
+        ['validate', '--offline'],
+      ]) {
+        final err = StringBuffer();
+        expect(
+          await runRialto(args, out: StringBuffer(), err: err),
+          64,
+          reason: '$args',
+        );
+        expect(err.toString(), '$usage\n');
+      }
+    });
+  });
+
+  group('bundle', () {
+    late Directory work;
+
+    setUp(() => work = Directory.systemTemp.createTempSync('rialto-cli'));
+    tearDown(() => work.deleteSync(recursive: true));
+
+    test('reports where it bundled to', () async {
+      final out = StringBuffer();
+      final input = p.join(contracts, 'valid/fragments/contract.rialto.yaml');
+      final output = p.join(work.path, 'out.rialto.yaml');
+      expect(await runRialto(['bundle', input, '--output', output], out: out, err: StringBuffer()), 0);
+      expect(out.toString(), '$input: bundled into $output\n');
+    });
+
+    test('writes nothing for a contract with errors, and fails', () async {
+      final err = StringBuffer();
+      final output = p.join(work.path, 'out.rialto.yaml');
+      final input = p.join(contracts, 'invalid/fragment-include-missing/contract.rialto.yaml');
+      expect(await runRialto(['bundle', '--output', output, input], out: StringBuffer(), err: err), 1);
+      expect(err.toString(), contains('error[RIALTO-K007]'));
+      expect(File(output).existsSync(), isFalse);
+    });
+
+    test('rejects a missing output or more than one contract', () async {
+      for (final args in [
+        ['bundle', 'a.yaml', '--output'],
+        ['bundle', '--output', 'out.yaml'],
+        ['bundle', '--output', 'out.yaml', 'a.yaml', 'b.yaml'],
+      ]) {
+        expect(
+          await runRialto(args, out: StringBuffer(), err: StringBuffer()),
+          64,
+          reason: '$args',
+        );
+      }
+    });
+  });
+
+  group('sources update', () {
+    late Directory work;
+
+    setUp(() => work = Directory.systemTemp.createTempSync('rialto-cli'));
+    tearDown(() => work.deleteSync(recursive: true));
+
+    test('updates nothing for a contract without remote sources', () async {
+      final out = StringBuffer();
+      expect(
+        await runRialto(['sources', 'update', p.join(contracts, 'valid/minimal.yaml')], out: out, err: StringBuffer()),
+        0,
+      );
+      expect(out.toString(), '0 remote source(s) updated in rialto.lock\n');
+    });
+
+    test('fails on a contract it cannot read', () async {
+      final err = StringBuffer(), out = StringBuffer();
+      final file = File(p.join(work.path, 'broken.yaml'))..writeAsStringSync('- a\n');
+      expect(await runRialto(['sources', 'update', file.path], out: out, err: err), 1);
+      expect(err.toString(), contains('error[RIALTO-K001]'));
+      expect(out.toString(), isEmpty);
+    });
+
+    test('rejects another subcommand', () async {
+      expect(await runRialto(['sources', 'list', 'x.yaml'], out: StringBuffer(), err: StringBuffer()), 64);
+    });
+  });
+
+  test('the executable exits with the code of the run and prints to stdout and stderr', () async {
+    final valid = await Process.run(Platform.resolvedExecutable, [
+      'bin/rialto.dart',
+      'validate',
+      p.join(contracts, 'valid/minimal.yaml'),
+    ]);
+    expect(valid.exitCode, 0, reason: '${valid.stderr}');
+    expect(valid.stdout, contains('minimal.yaml: valid'));
+    final usage = await Process.run(Platform.resolvedExecutable, ['bin/rialto.dart']);
+    expect(usage.exitCode, 64);
+    expect(usage.stderr, contains('Usage:'));
+  });
+
   group('remote sources', () {
     const url = 'https://api.example.com/things/api.json';
     late Directory work;

@@ -105,4 +105,36 @@ INSERT INTO t (note) VALUES ('x; y');
     expect(tables.keys, ['t']);
     expect(tables['t']!.columns.keys, ['note', 'mixed']);
   });
+
+  test('skips a CREATE that is no table, and a table without a body', () {
+    final tables = SqlSchema.tables('''
+CREATE TEMPORARY TABLE scratch (a int);
+CREATE INDEX i ON scratch (a);
+CREATE TABLE;
+CREATE TABLE nobody AS SELECT 1;
+CREATE TABLE IF NOT EXISTS scratch (b int);
+''');
+    expect(tables, {
+      'scratch': {'a'},
+    });
+  });
+
+  test('reads quoted strings with doubled quotes and an unterminated quote to the end', () {
+    expect(
+      SqlSchema.tables("CREATE TABLE t (a text DEFAULT 'it''s; fine', b int); CREATE TABLE u (c text DEFAULT 'open"),
+      {
+        't': {'a', 'b'},
+        'u': {'c'},
+      },
+    );
+  });
+
+  test('columns copy with changes and print their properties', () {
+    const column = SqlColumn('id', 'uuid', primaryKey: true);
+    final copy = column.copyWith(name: 'key', notNull: true, hasDefault: true);
+    expect((copy.name, copy.type, copy.notNull, copy.primaryKey, copy.hasDefault), ('key', 'uuid', true, true, true));
+    expect(column.copyWith().toString(), 'SqlColumn(id, uuid, notNull: false, primaryKey: true, hasDefault: false)');
+    expect(column.acceptsNull, isFalse);
+    expect(const SqlColumn('note', 'text').acceptsNull, isTrue);
+  });
 }

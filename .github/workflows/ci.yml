@@ -46,6 +46,17 @@ jobs:
         working-directory: rialto-dart/packages/${{ matrix.package }}
       - run: dart test
         working-directory: rialto-dart/packages/${{ matrix.package }}
+      # Line and branch coverage, printed to the log and the job summary; no threshold.
+      - name: Coverage
+        working-directory: rialto-dart/packages/${{ matrix.package }}
+        run: |
+          dart run coverage:test_with_coverage --branch-coverage --out coverage >/dev/null
+          awk -F'[:,]' '
+            /^LF:/ { lines += $2 } /^LH:/ { hit += $2 }
+            /^BRDA:/ { branches++; if ($5 != "-" && $5 != "0") taken++ }
+            END { printf "${{ matrix.package }}: lines %d/%d (%.1f%%), branches %d/%d (%.1f%%)\n",
+                  hit, lines, 100 * hit / lines, taken, branches, branches ? 100 * taken / branches : 0 }
+          ' coverage/lcov.info | tee -a "$GITHUB_STEP_SUMMARY"
 
   conformance:
     runs-on: ubuntu-latest

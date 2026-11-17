@@ -11,4 +11,5 @@ dependencies:
   path: ^1.9.1
   rialto_contract: ^0.1.0
 dev_dependencies:
+  coverage: ^1.16.0
   test: ^1.25.0
