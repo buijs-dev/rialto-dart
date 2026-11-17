@@ -71,9 +71,9 @@ void main() {
     expect(File(p.join(cache.path, 'sha256', RemoteSources.sha256(served!), 'api.json')).existsSync(), isTrue);
   });
 
-  test('reports a lock it cannot read', () async {
+  test('reports a lock it cannot read (RIALTO-K010)', () async {
     File(p.join(work.path, RemoteSources.lockFile)).writeAsStringSync('sources: [oops]\n');
-    expect(await codes(), ['RIALTO-K001']);
+    expect(await codes(), ['RIALTO-K010']);
   });
 
   test('reads a locked source from the cache without fetching it', () async {
@@ -127,24 +127,93 @@ void main() {
     expect(File(p.join(work.path, RemoteSources.lockFile)).existsSync(), isFalse);
   });
 
-  test('reports every form of a lock it cannot read, and reads an empty one as no lock', () async {
-    for (final text in ['sources: [oops\n', '- a\n', 'sources: {"$url": 42}\n']) {
-      File(p.join(work.path, RemoteSources.lockFile)).writeAsStringSync(text);
-      final diagnostics = (await ContractValidator.validateAsync(contract)).diagnostics;
-      expect(diagnostics.map((it) => it.code), [Code.unreadable], reason: text);
-      expect(diagnostics.single.message, startsWith('rialto.lock cannot be read'));
-      expect(diagnostics.single.location.file, endsWith(RemoteSources.lockFile));
-    }
-    if (!Platform.isWindows) {
-      final unreadable = File(p.join(work.path, RemoteSources.lockFile))..writeAsStringSync('sources: {}\n');
-      Process.runSync('chmod', ['000', unreadable.path]);
-      expect(await codes(), ['RIALTO-K001']);
-      Process.runSync('chmod', ['644', unreadable.path]);
-    }
-    for (final text in ['', '# nothing yet\n', 'other: 1\n']) {
-      File(p.join(work.path, RemoteSources.lockFile)).writeAsStringSync(text);
-      expect(await codes(), isEmpty, reason: text);
-    }
+  group('a lock that cannot be used (RIALTO-K010, K4.5)', () {
+    String lockPath() => p.join(work.path, RemoteSources.lockFile);
+
+    test(
+      'a lock that is no lock is an error on the contract, naming the lock and the sources it does not pin',
+      () async {
+        for (final (text, reason) in [
+          ('sources: [oops\n', 'not valid YAML: '),
+          ('- a\n', 'not a mapping'),
+          ('sources: [a]\n', 'sources is not a mapping'),
+          ('sources: {"$url": 42}\n', '$url is not a URL with a hash'),
+        ]) {
+          File(lockPath()).writeAsStringSync(text);
+          final diagnostic = (await ContractValidator.validateAsync(contract)).diagnostics.single;
+          expect(diagnostic.code, Code.lockUnusable, reason: text);
+          expect(diagnostic.requirement, 'K4.5');
+          expect(diagnostic.message, startsWith('Cannot read the lock ${lockPath()}: $reason'), reason: text);
+          expect(diagnostic.message, endsWith('. Not pinned: $url'), reason: text);
+          expect(diagnostic.location.file, contract);
+          expect(diagnostic.hint, 'Repair or remove rialto.lock, then run `rialto sources update`');
+          expect(File(lockPath()).readAsStringSync(), text, reason: 'the lock is left as it is');
+        }
+      },
+    );
+
+    test('a directory named rialto.lock is no lock, not an empty one, and nothing is fetched for it', () async {
+      Directory(lockPath()).createSync();
+      RemoteSources.fetch = (_) async => throw StateError('must not fetch');
+      final diagnostic = (await ContractValidator.validateAsync(contract)).diagnostics.single;
+      expect(diagnostic.code, Code.lockUnusable);
+      expect(diagnostic.message, 'Cannot read the lock ${lockPath()}: it is a directory. Not pinned: $url');
+      expect(Directory(lockPath()).existsSync(), isTrue);
+
+      final diagnostics = Diagnostics();
+      expect(await RemoteSources.update(contract, diagnostics), isEmpty);
+      expect(diagnostics.all.single.code, Code.lockUnusable);
+    });
+
+    test('a lock without read permission', () async {
+      final lock = File(lockPath())..writeAsStringSync('sources: {}\n');
+      Process.runSync('chmod', ['000', lock.path]);
+      addTearDown(() => Process.runSync('chmod', ['644', lock.path]));
+      final diagnostic = (await ContractValidator.validateAsync(contract)).diagnostics.single;
+      expect(diagnostic.code, Code.lockUnusable);
+      expect(diagnostic.message, startsWith('Cannot read the lock ${lockPath()}: '));
+    }, testOn: '!windows');
+
+    test('an unreadable lock is reported for a contract without remote sources too, without sources', () async {
+      File(p.join(support, 'api.json')).copySync(p.join(work.path, 'api.json'));
+      File(contract).writeAsStringSync(contractText('api.json'));
+      Directory(lockPath()).createSync();
+      final diagnostic = (await ContractValidator.validateAsync(contract)).diagnostics.single;
+      expect(diagnostic.message, 'Cannot read the lock ${lockPath()}: it is a directory');
+    });
+
+    test('a lock that cannot be written is an error naming the sources it could not pin; nothing crashes', () async {
+      Process.runSync('chmod', ['555', work.path]);
+      addTearDown(() => Process.runSync('chmod', ['755', work.path]));
+      final result = await ContractValidator.validateAsync(contract);
+      final diagnostic = result.diagnostics.single;
+      expect(diagnostic.code, Code.lockUnusable);
+      expect(diagnostic.message, startsWith('Cannot write the lock ${lockPath()}: '));
+      expect(diagnostic.message, endsWith('. Not pinned: $url'));
+      expect(diagnostic.location.file, contract);
+      expect(result.valid, isFalse);
+      expect(File(lockPath()).existsSync(), isFalse);
+
+      final diagnostics = Diagnostics();
+      expect(await RemoteSources.update(contract, diagnostics), isEmpty);
+      expect(diagnostics.all.single.message, startsWith('Cannot write the lock'));
+    }, testOn: '!windows');
+
+    test('the other findings are still reported', () async {
+      Directory(lockPath()).createSync();
+      File(contract).writeAsStringSync(
+        '${contractText(url)}  - {source: api#/components/schemas/Nope, target: Ghost, direction: toTarget}\n'
+        'storage:\n  Thing: {table: db#thing}\n',
+      );
+      expect(await codes(), ['RIALTO-K010', 'RIALTO-K004', 'RIALTO-K004']);
+    });
+
+    test('an empty lock, one with only comments or without sources, is a lock without entries', () async {
+      for (final text in ['', '# nothing yet\n', 'other: 1\n', 'sources:\n']) {
+        File(lockPath()).writeAsStringSync(text);
+        expect(await codes(), isEmpty, reason: text);
+      }
+    });
   });
 
   test('offline, a locked source that is not cached is RIALTO-S003 with its own message', () async {

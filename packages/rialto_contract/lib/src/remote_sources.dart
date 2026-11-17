@@ -83,7 +83,9 @@ class RemoteSources {
     final fetched = RemoteFetches();
     if (remote == RemoteMode.offline) return fetched;
     for (final contractFile in contractFiles) {
-      final locked = _readLock(contractFile, Diagnostics());
+      // An unreadable lock pins nothing, so nothing is fetched for it (K4.5); the run reports it.
+      final locked = _readLock(contractFile);
+      if (locked == null) continue;
       for (final (url, _) in _remotePaths(contractFile)) {
         if (!url.startsWith('https://') || fetched.hashes.containsKey(url) || fetched.failures.containsKey(url)) {
           continue;
@@ -166,18 +168,21 @@ class RemoteSources {
     return file;
   }
 
-  static Map<String, String> _readLock(String contractFile, Diagnostics diagnostics) {
-    final path = p.join(p.dirname(p.absolute(contractFile)), lockFile);
+  /// The locked hashes next to [contractFile], or null when the lock exists but cannot be read; [failure] receives
+  /// the reason.
+  static Map<String, String>? _readLock(String contractFile, [void Function(String reason)? failure]) {
     try {
-      return RialtoLock.readSources(path);
+      return RialtoLock.readSources(lockPath(contractFile));
     } on FormatException catch (e) {
-      diagnostics.error(Code.unreadable, '$lockFile cannot be read: ${e.message}', Location(path));
-      return const {};
+      failure?.call(e.message);
     } on FileSystemException catch (e) {
-      diagnostics.error(Code.unreadable, '$lockFile cannot be read: ${e.message}', Location(path));
-      return const {};
+      failure?.call(e.osError?.message ?? e.message);
     }
+    return null;
   }
+
+  /// The path of the lock of [contractFile]: `rialto.lock` in its directory.
+  static String lockPath(String contractFile) => p.join(p.dirname(p.absolute(contractFile)), lockFile);
 
   static Future<List<int>> _httpFetch(Uri url) => _httpFetchBounded(url, null);
 
@@ -226,7 +231,8 @@ class RemoteSession {
   RemoteSession(String contractFile, this.mode, this.diagnostics, [RemoteFetches? fetched])
     : _contractFile = contractFile,
       _fetched = fetched ?? RemoteFetches() {
-    _locked = RemoteSources._readLock(contractFile, diagnostics);
+    final locked = RemoteSources._readLock(contractFile, (reason) => _lockFailure = reason);
+    _locked = locked ?? const {};
   }
 
   final RemoteMode mode;
@@ -236,12 +242,23 @@ class RemoteSession {
   late final Map<String, String> _locked;
   final _hashes = <String, String>{};
 
-  String get _lockPath => p.join(p.dirname(p.absolute(_contractFile)), RemoteSources.lockFile);
+  /// Why the lock cannot be read, or null when it was read or does not exist.
+  String? _lockFailure;
+
+  /// The remote sources that could not be read because the lock cannot be read.
+  final _unpinned = <String>[];
+
+  String get _lockPath => RemoteSources.lockPath(_contractFile);
 
   /// The cached copy of [url], fetched before the run when needed, or null (reported at [location]).
   String? resolve(String url, Location location) {
     if (!url.startsWith('https://')) {
       diagnostics.error(Code.remoteScheme, 'Remote source $url does not use https', location);
+      return null;
+    }
+    // An unreadable lock is no empty lock: nothing it would pin is read (K4.5); [finish] reports it.
+    if (_lockFailure != null) {
+      if (!_unpinned.contains(url)) _unpinned.add(url);
       return null;
     }
     final pinned = _locked[url];
@@ -284,8 +301,14 @@ class RemoteSession {
     return file;
   }
 
-  /// Writes `rialto.lock` when a source was added or updated; returns the changed hashes.
+  /// Writes `rialto.lock` when a source was added or updated; returns the changed hashes. Reports a lock that cannot
+  /// be read or written (RIALTO-K010).
   List<SourceChange> finish() {
+    final failure = _lockFailure;
+    if (failure != null) {
+      _lockError('Cannot read the lock', failure, _unpinned);
+      return const [];
+    }
     if (diagnostics.hasErrors) return const [];
     final changes = [
       for (final MapEntry(key: url, value: hash) in _hashes.entries)
@@ -300,8 +323,28 @@ class RemoteSession {
             ..._hashes,
           };
     final same = next.length == _locked.length && next.entries.every((entry) => _locked[entry.key] == entry.value);
-    if (!same && mode != RemoteMode.offline) _writeLock(next);
+    if (!same && mode != RemoteMode.offline) {
+      try {
+        _writeLock(next);
+      } on FileSystemException catch (e) {
+        _lockError('Cannot write the lock', e.osError?.message ?? e.message, [
+          for (final change in changes) change.url,
+        ]);
+        return const [];
+      }
+    }
     return changes;
+  }
+
+  /// RIALTO-K010 on the contract: the lock, why, and the remote sources it does not pin.
+  void _lockError(String what, String reason, List<String> unpinned) {
+    final sources = unpinned.isEmpty ? '' : '. Not pinned: ${unpinned.join(', ')}';
+    diagnostics.error(
+      Code.lockUnusable,
+      '$what $_lockPath: $reason$sources',
+      Location(_contractFile),
+      hint: 'Repair or remove ${RemoteSources.lockFile}, then run `rialto sources update`',
+    );
   }
 
   /// Writes the sources section under the lock rialto-jvm takes too ([RialtoLock.exclusive]); the file is replaced
@@ -331,13 +374,19 @@ abstract final class RialtoLock {
   }
 
   static Map<Object?, Object?>? _root(String path) {
-    final file = File(path);
-    if (!file.existsSync()) return null;
+    switch (FileSystemEntity.typeSync(path)) {
+      case FileSystemEntityType.notFound:
+        return null;
+      case FileSystemEntityType.directory:
+        throw const FormatException('it is a directory');
+      default:
+        break;
+    }
     final Object? root;
     try {
-      root = loadYaml(file.readAsStringSync());
+      root = loadYaml(File(path).readAsStringSync());
     } on YamlException catch (e) {
-      throw FormatException(e.message);
+      throw FormatException('not valid YAML: ${e.message}');
     }
     if (root == null) return null;
     if (root is! Map) throw const FormatException('not a mapping');

@@ -37,7 +37,7 @@ The exit code is 0 on success, 1 when a contract has errors, and 64 on wrong usa
 
 1. the document, or the root and its fragments (`RIALTO-K001`, `K007`–`K009`, `K005` across fragments);
 2. the format version (`RIALTO-K003`) and the JSON Schema (`RIALTO-K002`);
-3. the sources (`RIALTO-S001`, `S003`–`S005`);
+3. the sources and `rialto.lock` (`RIALTO-S001`, `S003`–`S005`, `K010`);
 4. the checks of `ContractValidator.checks`. In slice 0 that is `FormatChecks`: unique names (`RIALTO-K005`), type
    expressions (`RIALTO-K006`), references to contract elements (`RIALTO-K004`) and into sources (`RIALTO-S002`), in
    every section.

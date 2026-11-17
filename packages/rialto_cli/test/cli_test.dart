@@ -279,6 +279,45 @@ mappings:
 
     String lock() => File(p.join(work.path, RemoteSources.lockFile)).readAsStringSync();
 
+    test('a lock that cannot be read fails validate with RIALTO-K010 and still reports the other findings', () async {
+      Directory(p.join(work.path, RemoteSources.lockFile)).createSync();
+      File(contract).writeAsStringSync('${File(contract).readAsStringSync()}storage:\n  Thing: {table: db#thing}\n');
+      for (final format in [
+        <String>[],
+        ['--format', 'json'],
+      ]) {
+        final out = StringBuffer(), err = StringBuffer();
+        expect(
+          await runRialto(['validate', ...format, contract], out: out, err: err),
+          1,
+          reason: '$format',
+        );
+        final codes = format.isEmpty
+            ? RegExp(r'error\[(RIALTO-\w+)\]').allMatches(err.toString()).map((m) => m.group(1)).toList()
+            : [
+                for (final d
+                    in (((jsonDecode(out.toString()) as Map)['contracts'] as List).single as Map)['diagnostics']
+                        as List)
+                  (d as Map)['code'],
+              ];
+        expect(codes, ['RIALTO-K010', 'RIALTO-K004'], reason: '$format');
+      }
+      final err = StringBuffer();
+      expect(await runRialto(['sources', 'update', contract], out: StringBuffer(), err: err), 1);
+      expect(err.toString(), contains('error[RIALTO-K010]'));
+    });
+
+    test('a lock that cannot be written fails validate with RIALTO-K010 instead of crashing', () async {
+      Directory(RemoteSources.cacheDir()).createSync();
+      Process.runSync('chmod', ['555', work.path]);
+      addTearDown(() => Process.runSync('chmod', ['755', work.path]));
+      final err = StringBuffer();
+      expect(await runRialto(['validate', contract], out: StringBuffer(), err: err), 1);
+      expect(err.toString(), contains('error[RIALTO-K010]'));
+      expect(err.toString(), contains('Cannot write the lock'));
+      expect(err.toString(), contains('Not pinned: $url'));
+    }, testOn: '!windows');
+
     test('validate --offline needs the cache, validate fetches and locks', () async {
       final err = StringBuffer();
       expect(await runRialto(['validate', '--offline', contract], out: StringBuffer(), err: err), 1);

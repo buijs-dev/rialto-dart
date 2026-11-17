@@ -32,6 +32,7 @@ enum Code {
   includeNoMatch('RIALTO-K007', 'K5.2', 'include path matches no file'),
   fragmentRootKey('RIALTO-K008', 'K5.2', 'fragment declares info, sources or include'),
   sectionTwice('RIALTO-K009', 'K5.4', 'section that belongs in one file appears in two'),
+  lockUnusable('RIALTO-K010', 'K4.5', 'rialto.lock cannot be read, or cannot be written when it must change'),
   sourceUnreadable('RIALTO-S001', 'K1.9', 'referenced source cannot be read'),
   sourceReference('RIALTO-S002', 'K1.2', 'reference into a source does not resolve'),
   remoteUnavailable('RIALTO-S003', 'K4.3', 'remote source can neither be fetched nor found in the cache'),
