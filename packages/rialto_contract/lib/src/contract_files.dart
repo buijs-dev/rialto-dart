@@ -29,6 +29,12 @@ class ContractFiles {
     }, schemaVersion: SchemaVersion.draft2020_12);
   }();
 
+  /// The schema of the root's `include` (K5.2).
+  static final JsonSchema _includeSchema = JsonSchema.create(
+    asMap(asMap(jsonDecode(contractSchema))['properties'])['include']!,
+    schemaVersion: SchemaVersion.draft2020_12,
+  );
+
   /// The bundled form of the contract at [root], or null when the root cannot be read. Findings,
   /// such as an include without a match or a name declared twice, go to [diagnostics].
   static LocatedDocument? read(String root, Diagnostics diagnostics) {
@@ -42,6 +48,12 @@ class ContractFiles {
 
     final include = asMap(document.root)['include'];
     if (include == null) return document;
+    // The bundled form drops `include`, so the JSON Schema of the whole contract never sees it: it is checked here.
+    final includeErrors = _includeSchema.validate(include).errors;
+    for (final error in includeErrors) {
+      diagnostics.error(Code.schema, error.message, document.locate('/include${error.instancePath}'));
+    }
+    if (includeErrors.isNotEmpty) return document;
     final bundle = _Bundle(document);
     for (final fragment in _fragments(root, asList(include), document, diagnostics)) {
       bundle.add(fragment, diagnostics);
@@ -124,13 +136,21 @@ class ContractFiles {
     return [for (final path in sorted) p.join(base, path)];
   }
 
-  /// A path pattern of `include`: `*` within one segment, `**` any number of segments, also none.
+  /// A path pattern of `include`: `*` within one segment, `**` any number of segments, also none. A final `**`
+  /// matches every file below its directory.
   static RegExp glob(String pattern) {
-    final regex = pattern.split('/').map((segment) {
-      if (segment == '**') return '(?:[^/]+/)*';
-      return '${segment.split('*').map(RegExp.escape).join('[^/]*')}/';
-    }).join();
-    return RegExp('^${regex.substring(0, regex.length - 1)}\$');
+    final segments = pattern.split('/');
+    final regex = StringBuffer('^');
+    for (var index = 0; index < segments.length; index++) {
+      final last = index == segments.length - 1;
+      if (segments[index] == '**') {
+        regex.write(last ? '(?:[^/]+/)*[^/]+' : '(?:[^/]+/)*');
+      } else {
+        regex.write(segments[index].split('*').map(RegExp.escape).join('[^/]*'));
+        if (!last) regex.write('/');
+      }
+    }
+    return RegExp('$regex\$');
   }
 }
 
